@@ -1,0 +1,416 @@
+bindkey -e
+
+setopt prompt_subst
+stty quit undef
+
+if [ $TILIX_ID ] || [ $VTE_VERSION ]; then
+	if [ -f /etc/profile.d/vte.sh ]; then
+		source /etc/profile.d/vte.sh
+	fi
+fi
+
+
+autoload colors zsh/terminfo
+    if [[ "$terminfo[colors]" -ge 8 ]]; then
+	colors
+    fi
+
+for color in RED GREEN YELLOW BLUE MAGENTA CYAN WHITE; do
+    eval PR_$color='%{$terminfo[bold]$fg[${(L)color}]%}'
+    eval PR_LIGHT_$color='%{$fg[${(L)color}]%}'
+    (( count = $count + 1 ))
+done
+PR_NO_COLOUR="%{$terminfo[sgr0]%}"
+
+feanor_custom_hostname() {
+    echo -n "nuxaos☯"
+}
+
+feanor_custom_goversion() {
+    goversion=$(go version|cut -c 14-19)
+    echo -n "⸙-${goversion}"
+}
+
+feanor_custom_pyenv() {
+    pyenv_flag=$(pyenv version|head -1|cut -f 1 -d \ )
+    x=$(echo $VIRTUAL_ENV)
+    if [[ -z $x ]];then
+	virtual_env="0"
+    else
+	virtual_env=$(basename $x)
+    fi
+    echo -n "⚕-$pyenv_flag:$virtual_env"
+}
+
+feanor_custom_qt() {
+    if [[ -z $QT_VERSION ]]; then
+    else
+	echo -n "Ω-$QT_VERSION"
+    fi
+}
+
+feanor_grab_current_context() {
+    if type "kubectl" > /dev/null; then
+	kube_context=$(kubectl config current-context 2>/dev/null)
+	if [[ -z $kube_context ]]; then
+	    kube_context="no_kube"
+	fi
+	echo "${kube_context:0:30}" > /tmp/current-kube-context
+	echo -n "${kube_context:0:30}"
+    fi
+}
+
+feanor_custom_kube_context() {
+    if [[ -s "/tmp/current-kube-context" ]];then
+	local kube_context=$(cat "/tmp/current-kube-context")
+	if [[ -z $kube_context ]]; then
+	    feanor_grab_current_context
+	fi
+	local current_ts=$(date '+%s')
+	local ftime=$(stat -c '%Y' "/tmp/current-kube-context")
+	local timediff=$(expr $current_ts - $ftime)
+	if [ $timediff -gt 300 ]; then
+	    rm "/tmp/current-kube-context"
+	fi
+	echo -n "${kube_context:0:30}"
+    else
+	feanor_grab_current_context
+    fi
+}
+
+function kpod {
+    oc get pod $1 -o yaml|bat
+}
+
+function kconfig {
+  export KUBECONFIG=`pwd`/$1
+}
+
+function kc {
+    local version=$1
+    local kubeconfig="${HOME}/Downloads/ocp-${version}/auth/kubeconfig"
+    local adminpass=`cat ${HOME}/Downloads/ocp-${version}/auth/kubeadmin-password`
+    echo "Setting kubeconfig to ${kubeconfig}"
+    echo "Passowrd is ${adminpass}"
+    export KUBECONFIG=$kubeconfig
+}
+
+function kcd {
+    local version=$1
+    local ocpdir="${HOME}/Downloads/ocp-${version}"
+    cd $ocpdir
+}
+
+prompt_git_state() {
+    local current_state=""
+    typeset -AH vcs_states
+    vcs_states=(
+	'clean'         '147'
+	'modified'      '214'
+	'untracked'     'green'
+    )
+    local head_info=$(git symbolic-ref HEAD 2> /dev/null)
+    if [[ $head_info =~ '^refs*' ]]; then
+	local branch_name=${head_info##refs/heads/}
+	local remote_name="gnufied"
+	remote_url=$(git remote get-url origin 2> /dev/null)
+	if [ $? -eq 0 ]; then
+	    git_transport=$(echo $remote_url|cut -c -3)
+	    if [[ "$git_transport" = "git" ]]; then
+		remote_name=$(echo $remote_url|cut -d ':' -f 2|cut -d '/' -f 1)
+	    else
+		remote_name=$(echo $remote_url|cut -d '/' -f 4)
+	    fi
+	else
+	   remote_name="none"
+	fi
+	local output=$(git status --porcelain 2>/dev/null|wc -l)
+	# local output=$(git ls-files -m --directory --no-empty-directory 2>/dev/null|wc -l)
+	# git diff --quiet --ignore-submodules HEAD
+	if [[ $output == 0 ]]; then
+	    current_state='clean'
+	    "$1_prompt_segment" "${0}_${(U)current_state}" "$2" "${vcs_states[$current_state]}" "$DEFAULT_COLOR" " $remote_name:$branch_name"
+	else
+	    current_state='modified'
+	    "$1_prompt_segment" "${0}_${(U)current_state}" "$2" "${vcs_states[$current_state]}" "$DEFAULT_COLOR" " $remote_name:$branch_name ✶"
+	fi
+    fi
+}
+
+
+# To be pasted in ~/.profile
+vagrant() {
+  if [[ $@ == "halt all" ]]; then
+    command vagrant global-status | grep running | colrm 8 | xargs -L 1 -t vagrant halt
+  else
+    command vagrant "$@"
+  fi
+}
+
+
+POWERLEVEL9K_MULTILINE_SECOND_PROMPT_PREFIX="╰─%2~> "
+
+POWERLEVEL9K_CUSTOM_RBENV="feanor_rbenv_prompt"
+POWERLEVEL9K_CUSTOM_RBENV_BACKGROUND="226"
+POWERLEVEL9K_CUSTOM_RBENV_FOREGROUND="black"
+
+POWERLEVEL9K_CUSTOM_GOVERSION="feanor_custom_goversion"
+POWERLEVEL9K_CUSTOM_GOVERSION_BACKGROUND="blue"
+POWERLEVEL9K_CUSTOM_GOVERSION_FOREGROUND="black"
+
+POWERLEVEL9K_CUSTOM_HOSTNAME="feanor_custom_hostname"
+POWERLEVEL9K_CUSTOM_HOSTNAME_BACKGROUND="127"
+POWERLEVEL9K_CUSTOM_HOSTNAME_FOREGROUND="231"
+
+POWERLEVEL9K_CUSTOM_PYENV="feanor_custom_pyenv"
+POWERLEVEL9K_CUSTOM_PYENV_BACKGROUND="blue"
+POWERLEVEL9K_CUSTOM_PYENV_FOREGROUND="white"
+
+POWERLEVEL9K_CUSTOM_QT="feanor_custom_qt"
+POWERLEVEL9K_CUSTOM_QT_BACKGROUND="white"
+POWERLEVEL9K_CUSTOM_QT_FOREGROUND="blue"
+
+POWERLEVEL9K_CUSTOM_KUBE_VERSION="feanor_custom_kube_context"
+POWERLEVEL9K_CUSTOM_KUBE_VERSION_BACKGROUND="blue"
+POWERLEVEL9K_CUSTOM_KUBE_VERSION_FOREGROUND="white"
+
+POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(custom_hostname custom_goversion git_state)
+if [[ -z $EMACS ]]; then
+    POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(custom_kube_version)
+else
+    POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=()
+fi
+
+POWERLEVEL9K_PROMPT_ON_NEWLINE=true
+source $HOME/dot_files/powerlevel9k/powerlevel9k.zsh-theme
+
+source $HOME/dot_files/zsh-z/zsh-z.plugin.zsh
+
+export EDITOR=emacsclient
+
+#history stuff
+## Command history configuration
+HISTFILE=$HOME/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000
+
+setopt HIST_EXPIRE_DUPS_FIRST    # Expire duplicate entries first when trimming history.
+setopt HIST_IGNORE_DUPS          # Don't record an entry that was just recorded again.
+setopt HIST_IGNORE_ALL_DUPS      # Delete old recorded entry if new entry is a duplicate.
+setopt HIST_FIND_NO_DUPS         # Do not display a line previously found.
+setopt HIST_IGNORE_SPACE         # Don't record an entry starting with a space.
+setopt HIST_SAVE_NO_DUPS         # Don't write duplicate entries in the history file.
+setopt HIST_REDUCE_BLANKS        # Remove superfluous blanks before recording entry.
+setopt HIST_VERIFY               # Don't execute immediately upon history expansion.
+setopt HIST_BEEP
+setopt SHARE_HISTORY
+
+setopt hist_verify
+setopt inc_append_history
+setopt extended_history
+setopt hist_expire_dups_first
+
+# completion related stuff
+## fixme - the load process here seems a bit bizarre
+
+setopt noautomenu
+setopt complete_in_word
+setopt always_to_end
+
+unsetopt flowcontrol
+
+WORDCHARS=''
+
+autoload -U compinit
+autoload -U bashcompinit
+compinit
+bashcompinit
+
+zmodload -i zsh/complist
+
+zstyle ':completion:*' menu select
+
+## case-insensitive (all),partial-word and then substring completion
+if [ "x$CASE_SENSITIVE" = "xtrue" ]; then
+  zstyle ':completion:*' matcher-list 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+  unset CASE_SENSITIVE
+else
+  zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+fi
+
+
+# autoload predict-on
+# predict-on
+
+# predict-toggle() {
+#   ((predict_on=1-predict_on)) && predict-on || predict-off
+# }
+
+# zle -N predict-toggle
+# bindkey '^Z'   predict-toggle
+
+# zstyle :predict verbose yes
+# zstyle :predict cursor key
+# zstyle ':completion:predict:*' completer _oldlist _complete _ignored _history _prefix
+
+
+unsetopt menucomplete
+setopt automenu
+
+zstyle ':completion:*' list-colors ''
+zstyle -e ':completion:*:default' list-colors 'reply=("${PREFIX:+=(#bi)($PREFIX:t)(?)*==02=01}:${(s.:.)LS_COLORS}")'
+
+# #unsetopt MENU_COMPLETE
+# setopt AUTO_MENU
+
+# should this be in keybindings?
+bindkey -M menuselect '^o' accept-and-infer-next-history
+bindkey "^[[A" history-search-backward
+bindkey "^[[B" history-search-forward
+
+bindkey ' ' magic-space                               # [Space] - do history expansion
+
+bindkey '^[[1;5C' forward-word                        # [Ctrl-RightArrow] - move forward one word
+bindkey '^[[1;5D' backward-word                       # [Ctrl-LeftArrow] - move backward one word
+
+
+# zstyle ':completion:*:*:*:*:*' menu yes select
+# zstyle ':completion:*:*:*:*:processes' force-list always
+
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#) ([0-9a-z-]#)*=01;34=0=01'
+zstyle ':completion:*:*:*:*:processes' command "ps -u `whoami` -o pid,user,comm -w -w"
+zstyle ':completion:*' rehash true
+
+# Load known hosts file for auto-completion with ssh and scp commands
+if [ -f ~/.ssh/known_hosts ]; then
+  zstyle ':completion:*' hosts $( sed 's/[, ].*$//' $HOME/.ssh/known_hosts )
+  zstyle ':completion:*:*:(ssh|scp):*:*' hosts `sed 's/^\([^ ,]*\).*$/\1/' ~/.ssh/known_hosts`
+fi
+#end of completion related stuff
+
+# Seen at: http://github.com/strcat/dotfiles/ and in grml.
+# Robust replacement for global aliases, and you can edit them too.
+# requires extended globbing.
+
+typeset -A abbrevs
+
+abbrevs=('...' '../..'
+	 '....' '../../..'
+	 'BG' '& exit'
+	 'C' '| wc -l'
+	 'G' '|& grep --color=auto'
+	 'H' '| head'
+	 'L' '| less'
+	 'LL' '|& less -r'
+	 'N' '&>/dev/null'
+	 'R' '| tr A-z N-za-m'
+	 'SL' '| sort | less'
+	 'S' '| sort -u'
+	 'T' '| tail'
+	 'md' 'mkdir -p '
+	 'bop' '~/Documents/workspace/bop'
+	 'org' '$HOME/redhat/origin'
+	 'ose' '$HOME/goal/src/github.com/openshift/ose'
+	 'lop' '$HOME/goal/src/github.com/openshift/local-storage-operator'
+	 'kub' '$HOME/redhat/kubernetes'
+	 'oi'  '$HOME/goal/github.com/openshift/installer'
+	 'psx' 'ps aux|grep '
+	 'v'   'vagrant'
+	 'gpo' 'git push origin '
+	 'grb' 'git rebase -i HEAD~2'
+ )
+
+# Create global aliases from the abbreviations.
+for abbr in ${(k)abbrevs}; do
+ alias -g $abbr="${abbrevs[$abbr]}"
+done
+
+fpath=(~/.zsh $fpath)
+#end of abbreviations stuff
+
+export GOROOT=/usr/local/go
+export PATH=/usr/local/bin:$HOME/bin:$GOROOT/bin:$GOPATH/bin:$HOME/.local/bin:$CRYSTALROOT/bin:$PATH
+export GOPATH=$HOME/goal
+export PATH=$GOPATH/bin:$HOME/.cask/bin:$PATH
+
+
+# Aliases
+alias g='git'
+alias i='invoker'
+alias gst='git status'
+alias gc='git commit -v'
+alias gca='git commit -v -a'
+alias gcount='git shortlog -sn'
+alias gcp='git cherry-pick'
+alias grst='git reset --hard HEAD'
+alias gf="git fetch"
+alias gfu="git fetch upstream"
+alias s="sake"
+alias be="bundle exec"
+alias bec="bundle exec cucumber"
+# Remove sudo alias
+# alias sudo='sudo env PATH=$PATH'
+alias p="python"
+alias k="kubectl"
+alias em="emacsclient"
+
+alias psr="ps axu|grep ruby"
+alias ..2="cd ../.."
+alias ..3="cd ../../.."
+alias r="rake"
+alias ls="ls --color=always"
+alias ct="ctags -h '[".rb.js"]' --exclude=vendor -e -R ."
+alias myip="curl ifconfig.me"
+alias ber="bundle exec rspec"
+alias xemacs="screen -S for_emacs -d -m emacs"
+alias kitty="kitty --title fast_emacs &"
+alias local_k=". ${HOME}/bin/local_kube"
+alias eg="egrep -a --color=always"
+alias eskr="screen -S for_skr -d -m start_skr.sh"
+alias vg="valgrind --leak-check=full --show-leak-kinds=all -v --track-origins=yes --log-file=vg_logfile.out"
+alias rg="rg --color always --no-mmap -a"
+export RUBY_HEAP_FREE_MIN=100000
+export RUBY_HEAP_SLOTS_INCREMENT=300000
+export RUBY_HEAP_SLOTS_GROWTH_FACTOR=1
+export RUBY_GC_MALLOC_LIMIT=79000000
+
+export RUBY_GC_HEAP_INIT_SLOTS=600000
+export RUBY_GC_HEAP_FREE_SLOTS=600000
+export RUBY_GC_HEAP_GROWTH_FACTOR=1.25
+export RUBY_GC_HEAP_GROWTH_MAX_SLOTS=300000
+
+SSH_ENV="$HOME/.ssh/environment"
+
+function start_agent {
+    echo "Initialising new SSH agent..."
+    /usr/bin/ssh-agent | sed 's/^echo/#echo/' > "${SSH_ENV}"
+    echo succeeded
+    chmod 600 "${SSH_ENV}"
+    . "${SSH_ENV}" > /dev/null
+    /usr/bin/ssh-add;
+}
+
+title() {
+  echo $'\033]30;'$*$'\007'
+}
+
+
+# Source SSH settings, if applicable
+
+if [ -f "${SSH_ENV}" ]; then
+    . "${SSH_ENV}" > /dev/null
+    #ps ${SSH_AGENT_PID} doesn't work under cywgin
+    ps -ef | grep ${SSH_AGENT_PID} | grep ssh-agent$ > /dev/null || {
+	start_agent;
+    }
+else
+    start_agent;
+fi
+
+
+alias pbcopy='xclip -selection clipboard'
+alias pbpaste='xclip -selection clipboard -o'
+
+source $HOME/dot_files/zsh-peco-history/zsh-peco-history.zsh
+export ZSH_PECO_HISTORY_OPTS="--layout=top-down"
+
